@@ -1,10 +1,14 @@
 # TB375FC LK patch tool
 
-Command-line tool that converts the **stock `lk.img` from the official Lenovo
-ZUX 1.5.10.103 firmware package for the TB375FC** into a build that skips the
-region check, so the tablet can boot TB373FU (global / international)
-system images from the `17.5.10.084` line onward **without changing the
-device's region**.
+Command-line tool that converts a **stock `lk.img` from an official Lenovo
+firmware package** into a build that skips the region check, so a TB375FC can
+boot TB373FU (global / international) system images from the `17.5.10.084` line
+onward **without changing the device's region**.
+
+Normal use: take the `image/lk.img` from the package you are about to flash
+(one of the supported builds), patch it, and write it back in place of that
+package's own file. The `lk.img` from the Chinese ZUX 1.5.10.103 toolkit works
+too, for people who already have it.
 
 This repository ships **no MTK firmware**. You supply the official package
 yourself; the tool transforms it and verifies the result.
@@ -21,46 +25,57 @@ the device into what is commonly called **"Red State"** — instead of starting
 Android, the tablet shows a failure / cannot-boot screen. That is why flashing a
 global ROM over the stock Chinese bootloader on a PRC unit fails.
 
-The `ZUX 1.5.10.103` Chinese bootloader is a useful middle ground: it already
-carries the new RSA-4096 root key, so the AVB stage passes. The only thing that
-still blocks a global ROM is the region check itself. This tool produces a
-version of that bootloader that skips the region check, so a global ROM boots.
+The bootloaders of that same line already carry the new RSA-4096 root key, so
+the AVB stage is not the problem; the only thing that still blocks a global ROM
+is the region check itself. This tool produces a version of such a bootloader
+with that check skipped, so the global ROM boots on a unit whose region is
+unchanged. The Chinese ZUX 1.5.10.103 bootloader is in the same position and is
+supported as an alternative input.
 
 ## Requirements
 
 - A Lenovo **TB375FC** (Xiaoxin Pad Pro 12.7, MT6897). Do **not** run this on
   any other model.
-- The official **ZUX 1.5.10.103** firmware package for TB375FC, from which
-  you extract `image/lk.img`.
-- **Global images from the `17.5.10.084` line or later, and no earlier ones.**
-  This bootloader pairs with that generation only. Earlier global builds —
-  `17.0.04.266` (Android 15) and `17.5.10.020` / `.043` / `.057` — will not
-  boot behind it, so do not combine them with this patch.
+- A supported stock `lk.img` — `python3 TB375FC_LK_patch.py --list` prints
+  them. Currently: ZUI 17.5.10.084 (global) and ZUX 1.5.10.103 (CN).
+  **Anything else is not supported.**
+- System images from the `17.5.10.084` generation or later, never earlier.
+  Earlier global builds — `17.0.04.266` (Android 15) and `17.5.10.020` /
+  `.043` / `.057` — are signed with the old AVB root key and will not boot
+  behind this bootloader.
 - Python 3 (standard library only, no third-party packages).
 - No bootloader unlock is needed.
 
 ## Usage
 
 ```bash
-python3 TB375FC_LK_patch.py image/lk.img
+python3 TB375FC_LK_patch.py image/lk.img      # from the package you will flash
 ```
 
 The tool runs three steps and writes nothing unless the checks pass:
 
-1. The input is exactly the stock `ZUX 1.5.10.103` `lk.img` (checksum).
+1. The input is a stock `lk.img` it knows, matched by checksum.
 2. The patch is applied.
-3. The output matches the reference build (checksum).
+3. The output matches the reference build for that input (checksum).
 
-On success it produces `lk103_patched.img`: 3,372,448 bytes, i.e. the stock
-image plus 80 bytes. The `lk` partition is 16 MB, so there is ample room.
+On success it produces `lk_patched.img`: 3,372,448 bytes, i.e. the stock image
+plus 80 bytes. The `lk` partition is 16 MB, so there is ample room.
 
-Current version: `1.0.0` — `python3 TB375FC_LK_patch.py --version` prints it, and
+Current version: `1.1.0` — `python3 TB375FC_LK_patch.py --version` prints it, and
 it appears as the first line of every run. Quote it when reporting problems.
+`--list` prints the supported stock files and what each should produce:
+
+| Stock input | md5 | Patched output md5 |
+|---|---|---|
+| ZUI 17.5.10.084, global (`TB373FU`) | `c4a48acd946962d7ad9c4f11f52d49b6` | `e2f258b200bec58694e9e531fbba8a61` |
+| ZUX 1.5.10.103, CN (`TB375FC`) | `d7c52a4508828df41b43742641c8968e` | `9f1076942879fbf9e588e2a516c5b8da` |
+
+That list is the support matrix. Anything not listed is not supported.
 
 ## Flashing
 
-Everything below comes from the **global** package. The 1.5.10.103 toolkit is
-only a source of `image/lk.img` — it has no flashing tool and no scatter.
+Everything below comes from the **global** package — including the `lk.img` you
+patch, so one package is enough.
 
 Use the SP Flash Tool that comes inside the global package
 (`SPFlashToolV6.exe`); on Linux, the same writes go through mtkclient instead.
@@ -76,9 +91,9 @@ tool.
 
 Then, in **Download Only** mode:
 
-1. Load the TB373FU global package of the **17.5.10.084 line or later** — those
-   are the builds this bootloader pairs with (older global builds do not).
-2. Set the **`lk_a`** row's file to `lk103_patched.img` and keep that row
+1. Load the package whose `lk.img` you patched. Do not mix in an older global
+   package: those will not boot behind this bootloader.
+2. Set the **`lk_a`** row's file to `lk_patched.img` and keep that row
    selected. Do not let the package write its own `lk`: if the stock `lk` lands,
    the patched bootloader is gone and the tablet goes back to Red State. (The
    package has no file at all for `lk_b`. If you want both slots covered up
@@ -100,12 +115,8 @@ and leaves the tablet unbootable.
 `fastboot flash` is not the right path here: fastboot refuses to write while
 the device is locked.
 
-You can verify the output yourself against the reference checksums below.
-
-| Build | md5 |
-|---|---|
-| Stock `image/lk.img` | `d7c52a4508828df41b43742641c8968e` |
-| Patched output | `9f1076942879fbf9e588e2a516c5b8da` |
+You can verify your output against the reference checksum for your input; the
+table in [Usage](#usage) lists them, and the tool checks it for you.
 
 ## Limitations
 
@@ -124,7 +135,7 @@ You can verify the output yourself against the reference checksums below.
      image, then `fastboot reboot`. This leaves you on the older system build.
   2. If fastboot does not come up, the package cannot help — it has no file for
      `lk_b`, and after an update the patched image is not in the active slot.
-     Use a partition writer such as mtkclient and write `lk103_patched.img` to
+     Use a partition writer such as mtkclient and write `lk_patched.img` to
      **both** `lk_a` and `lk_b`, since without fastboot there is no easy way to
      tell which slot is active. That takes the update and keeps the patch.
 - **If something goes wrong, recover in Download mode, not fastboot.** Only one
